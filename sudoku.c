@@ -7,8 +7,8 @@
  * Implements the game of Sudoku.
  ***************************************************************************/
 
-#include "sudoku.h"
 
+#include "sudoku.h"
 #include <ctype.h>
 #include <ncurses.h>
 #include <signal.h>
