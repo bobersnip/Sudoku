@@ -48,6 +48,9 @@ struct
 // array to check/compare the game board to the current game board
 int checkBoard[9][9];
 
+// int used for the "ctrl z", undo command
+int undo_number = 0;
+
 // prototypes
 void draw_grid(void);
 void draw_borders(void);
@@ -57,6 +60,7 @@ void hide_banner(void);
 bool load_board(void);
 void handle_signal(int signum);
 void log_move(int ch);
+void log_board(int ch);
 void redraw_all(void);
 bool restart_game(void);
 void show_banner(char *b);
@@ -67,6 +71,7 @@ void number_change(int ch);
 void to_period(void);
 bool wrong(int ch);
 bool correct(void);
+void undo(void);
 
 /*
  * Main driver for the game.
@@ -266,6 +271,12 @@ main(int argc, char *argv[])
                     to_period();
                     break;
                 }
+                
+            case 'U':
+                undo();
+                
+            case CTRL('z'):
+                undo();
             
             // change g.board[g.y][g.x] that the cursor is over with a number
             default:
@@ -273,6 +284,7 @@ main(int argc, char *argv[])
                 {
                     if (isdigit(ch))
                     {
+                        log_board(ch);
                         if (!wrong(ch))
                         {
                             show_banner("Be careful where you step.");
@@ -289,7 +301,9 @@ main(int argc, char *argv[])
 
         // log input (and board's state) if any was received this iteration
         if (ch != ERR)
+        {
             log_move(ch);
+        }
     }
     while (ch != 'Q');
     // shut down ncurses
@@ -594,6 +608,30 @@ log_move(int ch)
     fclose(fp);
 }
 
+// logs the previous state of the board for the undo function
+void
+log_board(int ch)
+{
+    remove("number_log.txt");
+    FILE *fp = fopen("number_log.txt", "a");
+    if (fp == NULL)
+        return;
+
+    // log input
+    fprintf(fp, "%d\n", ch);
+
+    // log board
+    for (int i = 0; i < 9; i++)
+    {
+        for (int j = 0; j < 9; j++)
+            fprintf(fp, "%d", g.board[i][j]);
+        fprintf(fp, "\n");
+    }
+
+    // that's it
+    fclose(fp);
+}
+
 
 /*
  * (Re)draws everything on the screen.
@@ -645,6 +683,7 @@ restart_game(void)
 
     // remove log, if any
     remove("log.txt");
+    remove("number_log.txt");
 
     // w00t
     return true;
@@ -804,12 +843,15 @@ bool wrong(int ch)
     // finds which box the selected number is in
     int box_y = g.y / 3 * 3;
     int box_x = g.x / 3 * 3;
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < 3; i++)
     {
-        if (ch == g.board[box_y + i][box_x + i])
+        for (int j = 0; j < 3; j++)
         {
-            return false;
-            break;
+            if (ch == g.board[box_y + i][box_x + j])
+            {
+                return false;
+                break;
+            }
         }
     }
     return true;
@@ -851,4 +893,34 @@ bool correct(void)
         }
     }
     return true;
+}
+
+void undo(void)
+{
+    FILE *fp = fopen("number_log.txt", "r");
+    if (fp == NULL)
+    {
+        return;
+    }
+    for (int i = 0; i < 3; i++)
+    {
+        fgetc(fp);
+    }
+    int number;
+    for (int i = 0; i < 9; i++)
+    {
+        for (int j = 0; j < 9; j++)
+        {
+            number = fgetc(fp);
+            g.board[i][j] = number - 48;
+        }
+        fgetc(fp);
+        if (feof(fp))
+        {
+            break;
+        }
+    }
+    draw_numbers();
+    fclose(fp);
+    return;
 }
