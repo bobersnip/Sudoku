@@ -7,8 +7,8 @@
  * Implements the game of Sudoku.
  ***************************************************************************/
 
-
 #include "sudoku.h"
+
 #include <ctype.h>
 #include <ncurses.h>
 #include <signal.h>
@@ -45,6 +45,8 @@ struct
     int y, x;
 } g;
 
+// array to check/compare the game board to the current game board
+int checkBoard[9][9];
 
 // prototypes
 void draw_grid(void);
@@ -61,7 +63,10 @@ void show_banner(char *b);
 void show_cursor(void);
 void shutdown(void);
 bool startup(void);
-
+void number_change(int ch);
+void to_period(void);
+bool wrong(int ch);
+bool correct(void);
 
 /*
  * Main driver for the game.
@@ -238,7 +243,36 @@ main(int argc, char *argv[])
                     g.y = 8;
                     show_cursor();
                 }
-                break;    
+                break;   
+            
+            // change g.board[g.y][g.x] to a period
+            case KEY_BACKSPACE:
+                to_period();
+                break;
+                
+            case KEY_DC:
+                to_period();
+                break;
+                
+            case '.':
+                to_period();
+                break;
+            
+            // change g.board[g.y][g.x] that the cursor is over with a number
+            default:
+                if (isdigit(ch))
+                {
+                    if (!wrong(ch))
+                    {
+                        show_banner("Be careful where you step.");
+                    }
+                    else
+                    {
+                        hide_banner();
+                    }
+                    number_change(ch);
+                }
+                break;
         }
 
         // log input (and board's state) if any was received this iteration
@@ -359,7 +393,7 @@ draw_logo(void)
     // enable color if possible
     if (has_colors())
         attron(COLOR_PAIR(PAIR_LOGO));
-
+    
     // draw logo
     mvaddstr(top + 0, left, "               _       _          ");
     mvaddstr(top + 1, left, "              | |     | |         ");
@@ -387,10 +421,6 @@ draw_logo(void)
 void
 draw_numbers(void)
 {
-    // enable color if possible
-    if (has_colors())
-        attron(COLOR_PAIR(PAIR_DIGITS));
-        
     // iterate over board's numbers
     for (int i = 0; i < 9; i++)
     {
@@ -398,11 +428,34 @@ draw_numbers(void)
         {
             // determine char
             char c = (g.board[i][j] == 0) ? '.' : g.board[i][j] + '0';
+            // changes the color if it is a user input into the new board
+            if (checkBoard[i][j] == g.board[i][j])
+            {
+                attron(COLOR_PAIR(PAIR_DIGITS));
+            }
+            else
+            {
+                attron(COLOR_PAIR(PAIR_NEW_DIGITS));
+            }
             mvaddch(g.top + i + 1 + i/3, g.left + 2 + 2*(j + j/3), c);
             refresh();
         }
     }
     
+    // if the board is solved, turns all of the numbers green.
+    if (correct())
+    {
+        attron(COLOR_PAIR(PAIR_CORRECT_DIGITS));
+        for (int i = 0; i < 9; i++)
+        {
+            for (int j = 0; j < 9; j++)
+            {
+                char c = (g.board[i][j] == 0) ? '.' : g.board[i][j] + '0';
+                mvaddch(g.top + i + 1 + i/3, g.left + 2 + 2*(j + j/3), c);
+                refresh();
+            }
+        }
+    }
     // disable color if possible
     if (has_colors())
         attroff(COLOR_PAIR(PAIR_BANNER));
@@ -472,14 +525,31 @@ load_board(void)
 
     // seek to specified board
     fseek(fp, offset, SEEK_SET);
-
+    
     // read board into memory
     if (fread(g.board, 81 * INTSIZE, 1, fp) != 1)
     {
         fclose(fp);
         return false;
     }
-
+    
+    // copy the initial game board to another board that is used to
+    // check the game board.
+    for (int i = 0; i < 9; i++)
+    {
+        for (int j = 0; j < 9; j++)
+        {
+            if (g.board[i][j] == 0)
+            {
+                checkBoard[i][j] = 100;
+            }
+            else
+            {
+                checkBoard[i][j] = g.board[i][j];
+            }
+        }
+    }
+        
     // w00t
     fclose(fp);
     return true;
@@ -640,7 +710,9 @@ startup(void)
             init_pair(PAIR_GRID, FG_GRID, BG_GRID) == ERR ||
             init_pair(PAIR_BORDER, FG_BORDER, BG_BORDER) == ERR ||
             init_pair(PAIR_LOGO, FG_LOGO, BG_LOGO) == ERR ||
-            init_pair(PAIR_DIGITS, FG_DIGITS, BG_DIGITS) == ERR)
+            init_pair(PAIR_DIGITS, FG_DIGITS, BG_DIGITS) == ERR ||
+            init_pair(PAIR_NEW_DIGITS, FG_NEW_DIGITS, BG_NEW_DIGITS) == ERR ||
+            init_pair(PAIR_CORRECT_DIGITS, FG_CORRECT_DIGITS, BG_CORRECT_DIGITS) == ERR)
         {
             endwin();
             return false;
@@ -672,5 +744,100 @@ startup(void)
     timeout(1000);
 
     // w00t
+    return true;
+}
+
+// changes the number in the grid to whatever number is pressed
+void number_change(int ch)
+{
+    if (g.board[g.y][g.x] != checkBoard[g.y][g.x])
+    {
+        g.board[g.y][g.x] = ch - 48;
+        draw_numbers();
+        show_cursor();
+    }
+}
+
+// changes the number in the grid to a period
+void to_period(void)
+{
+    if (g.board[g.y][g.x] != checkBoard[g.y][g.x])
+    {
+        g.board[g.y][g.x] = 0;
+        draw_numbers();
+        show_cursor();
+    }
+}
+
+// checks to see if there are any duplicates in the row, column, or box
+bool wrong(int ch)
+{
+    ch -= 48;
+    // checks the columns & rows for duplicates
+    for (int i = 0; i < 9; i++)
+    {
+        // checks the columns for duplicates
+        if (ch == g.board[g.y][i])
+        {
+            return false;
+            break;
+        }
+        // checks the rows for duplicates
+        else if (ch == g.board[i][g.x])
+        {
+            return false;
+            break;
+        }
+    }
+    // checks the 3x3 boxes for duplicates
+    // finds which box the selected number is in
+    int box_y = g.y / 3 * 3;
+    int box_x = g.x / 3 * 3;
+    for (int i = 0; i < 2; i++)
+    {
+        if (ch == g.board[box_y + i][box_x + i])
+        {
+            return false;
+            break;
+        }
+    }
+    return true;
+}
+
+// checks to see if the user has won the game. Returns true if so
+// and false otherwise
+bool correct(void)
+{
+    int checker = 0;
+    for (int i = 0; i < 9; i++)
+    {
+        for (int j = 0; j < 9; j++)
+        {
+            checker += g.board[i][j];
+        }
+        if (checker == 45)
+        {
+            checker = 0;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    for (int j = 0; j < 9; j++)
+    {
+        for (int i = 0; i < 9; i++)
+        {
+            checker += g.board[i][j];
+        }
+        if (checker == 45)
+        {
+            checker = 0;
+        }
+        else
+        {
+            return false;
+        }
+    }
     return true;
 }
