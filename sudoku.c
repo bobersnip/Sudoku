@@ -247,32 +247,44 @@ main(int argc, char *argv[])
             
             // change g.board[g.y][g.x] to a period
             case KEY_BACKSPACE:
-                to_period();
-                break;
+                if (!correct())
+                {
+                    to_period();
+                    break;
+                }
                 
             case KEY_DC:
-                to_period();
-                break;
+                if (!correct())
+                {
+                    to_period();
+                    break;
+                }
                 
             case '.':
-                to_period();
-                break;
+                if (!correct())
+                {
+                    to_period();
+                    break;
+                }
             
             // change g.board[g.y][g.x] that the cursor is over with a number
             default:
-                if (isdigit(ch))
+                if (!correct())
                 {
-                    if (!wrong(ch))
+                    if (isdigit(ch))
                     {
-                        show_banner("Be careful where you step.");
+                        if (!wrong(ch))
+                        {
+                            show_banner("Be careful where you step.");
+                        }
+                        else
+                        {
+                            hide_banner();
+                        }
+                        number_change(ch);
                     }
-                    else
-                    {
-                        hide_banner();
-                    }
-                    number_change(ch);
+                    break;
                 }
-                break;
         }
 
         // log input (and board's state) if any was received this iteration
@@ -280,7 +292,6 @@ main(int argc, char *argv[])
             log_move(ch);
     }
     while (ch != 'Q');
-
     // shut down ncurses
     shutdown();
 
